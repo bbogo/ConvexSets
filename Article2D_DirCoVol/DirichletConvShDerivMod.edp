@@ -1,0 +1,326 @@
+load "Curvature"
+load "medit"
+load "ff-Ipopt"
+load "distance"
+//load "Element_P3"
+//real[int] vec = [1,1.2,1,1.3,1.1];
+real[int] vect(60);
+vect = 0.5;
+int loading=1;
+
+real adapth = 0.02;
+
+real[int] best = [0,37.987,0,65.28,79.70,88.54,109.44,120.58,137.38,143.15];
+
+int NN = vect.n;
+real h = 2*pi/NN;
+
+real[int] thetas = 0:h:(2*pi-h/2);
+
+for(int i=0;i<NN;i++){
+   //vect[i] = 1+0.1*cos(2*thetas[i]);  // init for 2, 4
+   //vect[i] = 1+cos(2*thetas[i])*randreal1(); /// init for 5,7
+   //vect[i] = 1+0.1*cos(2*thetas[i])*randreal1(); /// init for 6,8,9
+   vect[i] = 1+0.2*cos(3*thetas[i])*randreal1(); /// init for 10
+}
+
+int eigCount = 2;
+int eString = eigCount-1;
+real pm = 1;
+macro Pk P2//
+macro Pk0 P2//
+macro Pkn P2//
+
+real w = 2;
+verbosity = 0;
+
+func real[int] rand(int h){
+  randinit(randint32() );
+  real[int] vec(h);
+  for(int i = 0;i<h;i++){
+     vec(i) = 2*randreal1()-1;
+  }
+  return vec;
+}
+
+func real[int] symm(real[int] &vec){
+	real[int] res(vec.n);
+	res[0] = vec[0];
+	for(int i=1;i<vec.n;i++){
+		real mm = 0.5*(vec[i]+vec[vec.n-i]);
+		res[i] = mm;
+		res[vec.n-i] = mm;
+	}
+	return res;
+}
+
+for(int i=0;i<6;i++){
+   real[int] vect00 = rand(vect.n); 
+}
+
+
+//vect = vect+0.001*symm(rand(vect.n));
+
+
+
+
+int fin = 0;
+
+
+// Number of constraints: 
+// Convexity: nb of points
+// CW       : nb of points/2
+int Nconstr = vect.n;
+
+real[int,int] A(Nconstr,vect.n);
+A = 0;  // initialization is important...
+
+real den = 2*(1-cos(h));
+
+//real h = 2*pi/vect.n;
+for(int i=0;i<vect.n;i++){
+  A(i,i) = 1-2/den;
+  if(i+1<vect.n){A(i,i+1) = 1/den;}
+  if(i>0){A(i,i-1) = 1/den;}
+}
+A(0,vect.n-1) = 1/den;
+A(vect.n-1,0) = 1/den;
+
+real[int,int] Adiam(vect.n/2,vect.n);
+for(int i=0;i<vect.n/2;i++){
+  Adiam(i,i) = 1;
+  Adiam(i,i+vect.n/2) = 1;
+}
+
+real[int] bvec(Nconstr);
+bvec = 0;
+
+matrix B = A;
+
+real[int] gradHold(vect.n);
+real[int] gradPointEval(vect.n);
+
+real minval = 1e16;
+real[int] minHold(vect.n);
+
+macro grad(u) [dx(u),dy(u)] // EOM
+
+real[int,int] A0(vect.n,vect.n);
+matrix B0;
+
+real den1 = 2*sin(h);
+real den2 = (2-2*cos(h));
+
+
+func real[int] f(real[int] &vect){
+  //cout << vect<< endl;
+  real[int] tempvect = vect;
+  real[int] ctr   = Adiam*vect;
+  real diam = ctr.max;
+  cout << "Diameter="<< diam << endl;
+  real[int] vplus = [vect(1:NN-1),vect(0)];
+  real[int] vmin  = [vect(NN-1),vect(0:NN-2)];
+  real[int] deriv = (vplus-vmin);
+  deriv = 1/den1*deriv;
+  real[int] deriv2 = (vplus+vmin);
+  deriv2 = deriv2-2*vect;
+  deriv2 = 1/den2*deriv2;
+  real[int] crad = deriv+deriv2;
+  real[int] X(NN),Y(NN);
+    for(int j=0;j<NN;j++){
+       X[j] = cos(thetas(j))*vect(j)-sin(thetas(j))*deriv(j);
+       Y[j] = sin(thetas(j))*vect(j)+cos(thetas(j))*deriv(j);
+    }
+  border G(t=0,1;i){
+      int inext = (i+1)%NN;
+      x = (1-t)*X[i]+t*X[inext];
+      y = (1-t)*Y[i]+t*Y[inext];
+      label=0;
+  }
+  int[int] NG(NN);
+  NG = 3;
+  //plot(G(NG));
+  mesh Th;
+  try{
+     Th = buildmesh(G(NG),fixedborder=1);
+  //Th = adaptmesh(Th,0.02*diam,IsMetric=1,nbvx=50000,keepbackvertices=0,iso=0);
+//Th = adaptmesh(Th,0.02*diam,IsMetric=1,nbvx=50000,keepbackvertices=0,iso=1);
+     Th = adaptmesh(Th,hmax=adapth*diam,nbvx=50000,iso=1);
+    // Th = adaptmesh(Th,hmax=adapth*diam,nbvx=50000,iso=1);
+//Th = adaptmesh(Th,hmax=adapth*diam,nbvx=50000,keepbackvertices=0,iso=1);
+//Th = adaptmesh(Th,hmax=0.01*2,nbvx=50000,keepbackvertices=0,iso=1);
+//Th = adaptmesh(Th,0.01*diam,IsMetric=1,nbvx=50000,keepbackvertices=0,iso=1);
+//Th = adaptmesh(Th,0.005*diam,IsMetric=1,nbvx=50000,keepbackvertices=0,iso=1);
+  }
+  catch(...){
+  	real[int] gradt = vect;
+  	gradt = rand(vect.n);
+  	real val = 1e16;
+  	real[int] result = [val,gradt];
+  	return result;
+  }
+  plot(Th);
+  fespace Vh(Th,Pk);
+  fespace Vh0(Th,Pk0);
+  Vh u,v,p;
+  //Vh xx = x;
+  //plot(xx,fill=1,value=1);
+  
+  varf aa(u,v) = int2d(Th)(dx(u)*dx(v)+dy(u)*dy(v))
+                +on(0,u=0);
+  varf bb(u,v) = int2d(Th)(u*v);
+
+  real[int] ev(eigCount);
+  Vh[int] eV(eigCount);
+  real[int] eVect(Vh.ndof);
+  real speed,lambda;
+  matrix A = aa(Vh,Vh,solver=UMFPACK);
+  matrix B = bb(Vh,Vh);
+  int numEigs = EigenValue(A,B,sigma=0,sym=true,value=ev,vector=eV);
+  
+  
+  int[int] ii(0:ev.n-1);
+  sort(ev,ii);
+
+  // Parametric deriv = 2*Pi/N*ShDeriv*(p+p'') !!!!! 
+  real eig = ev[eigCount-1];
+  
+  u[] = eV[ii(eigCount-1)][];
+  
+  
+  
+  //plot(u,fill=1,wait=1);
+  Vh0 ShDerivE = -(dx(u)^2+dy(u)^2);
+  Vh0 ShDerivA = 1;
+  
+  // Compute Angles
+  varf vtheta(u,v) = on(0,u=atan2(N.y,N.x));
+  varf vNx(u,v) = on(0,u=N.x);
+  varf vNy(u,v) = on(0,u=N.y);
+  fespace Wh(Th,Pkn);
+  Wh ThetaB = vtheta(0,Wh,tgv=1);
+  Wh Nx = vNx(0,Wh,tgv=1);
+  Wh Ny = vNy(0,Wh,tgv=1);
+  Wh Norm = sqrt(Nx^2+Ny^2);
+  Norm= Norm+1e-3*(Norm<1e-3);
+  Nx = Nx/Norm;
+  Ny = Ny/Norm;
+
+  //Vh0 ShDeriv = Th.area*ShDerivE+val*ShDerivA; 
+  
+  Vh0 ShDeriv = ShDerivE+ShDerivA; 
+  
+  
+  //val= Th.area*val;
+  real val = eig+Th.area;
+
+
+  real[int] SDeval(NN);
+  Vh[int] Chi(NN);
+  for(int i=0;i<NN;i++){
+     Chi[i] = h-(acos(Nx*cos(thetas[i])+Ny*sin(thetas[i])));
+     Chi[i] = 1/h*Chi[i]*(Chi[i]>=0);
+     //plot(Chi,fill=1,wait=1);
+     SDeval[i] = int1d(Th,0)(ShDeriv*Chi[i]);
+  }
+  
+  real[int] gradt = SDeval;
+  real[int] result = [val,gradt];
+ 
+  result = pm*result;
+  cout << "Act min val: " << minval << " AH = " << best[eigCount-1] << " Current= " << eig*Th.area << endl;
+   if(eig*Th.area<minval){
+      minval = eig*Th.area;
+      minHold = vect;
+      cout << "New min val: " << minval << endl;
+      {
+        ofstream fout("outputMinvalMod"+eString+".dat");
+        fout.precision(16);
+		  fout << vect.n << endl;
+		  for(int i=0;i<vect.n;i++){
+ 			 fout << minHold[i] << endl;
+		  }
+      };
+   }
+  return result;
+}
+
+f(vect);
+
+
+
+
+
+
+
+func real J(real[int] &X){
+   cout << "Eval J"<< endl;
+   real[int] result = f(X);
+   gradHold = result(1:result.n-1);
+   gradPointEval = X;
+   return result(0);
+}
+
+func real[int] gradJ(real[int] &X){
+   cout << "Eval gradJ"<< endl;
+   {
+    ofstream f("EigConvex_ShDeriv.data");
+    f.precision(16);
+    for(int i=0;i<X.n;i++){
+    	f << X[i] << endl;
+    }
+}
+   real[int] dvec = X-gradPointEval;
+   dvec = abs(dvec);
+   if(dvec.min<1e-6)
+     {
+     cout << "Same grad" << endl;
+     return gradHold;
+     }
+   else{
+     real[int] result = f(X);
+     gradHold = result(1:result.n-1);
+     gradPointEval = X;
+     return gradHold;
+   }
+}
+
+matrix hessianLBuffer; //Just to keep it in mind
+
+func matrix hessianL (real[int] &X, real sigma, real[int] &lambda){
+    matrix Hess = B0;
+    cout << Hess << endl;
+    return Hess;
+}
+
+real[int] clb = bvec;
+clb = 0;
+
+
+
+
+real[int] lb = vect;
+lb = 0;
+real[int] ub = vect;
+lb = 0.1;
+ub = 2;
+
+//IPOPT(J,gradJ,[B,bvec],vect,clb=clb,cub=cub,lb=lb,linesearch=0,maxiter=1000);
+IPOPT(J,gradJ,[B,bvec],vect,clb=clb,lb=lb,linesearch=0,maxiter=1000);
+//IPOPT(J,gradJ,[B,bvec],vect,clb=clb,cub=cub,lb=lb,linesearch=1,maxiter=1000);
+
+
+//cout << vect << endl;
+
+real[int] rrr = f(vect);
+cout << rrr(0) << endl;
+
+{
+    ofstream f("EigConvex_ShDerivMod"+(eigCount)+".data");
+    f.precision(16);
+    for(int i=0;i<vect.n;i++){
+    	f << vect[i] << endl;
+    }
+}
+
+
