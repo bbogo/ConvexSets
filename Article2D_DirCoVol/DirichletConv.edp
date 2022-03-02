@@ -1,31 +1,56 @@
+// Minimization of Dirichlet-Laplace eigenvalues under 
+// convexity and volume constraints in 2D
+// 
+// FreeFEM script. See installation instructions
+// at freefem.org
+//
+// Example of usage:
+// FreeFem++ -n 120 -i 0 -k 2
+//
+// Options: 
+// -i   choose initialization
+// -k   choose the index of the eigenvalue
+// -n   choose the number of discretization points
+
+
 load "Curvature"
 load "medit"
 load "ff-Ipopt"
 load "distance"
 include "macro_ddm.idp"                  // Additional DDM functions
-//load "Element_P3"
-//real[int] vec = [1,1.2,1,1.3,1.1];
 
+// number of discretization points
 int npts = getARGV("-n",120);
 
+// Vector containing the variables
 real[int] vect(npts);
 vect = 0.5;
-int loading=1;
 
 cout.precision(16);
 
+// Choose the form of the objective function
+// variant = 1 ->  lamdba*area
+// variant = 2 ->  lambda+area
 int variant=2;
+
+// choose initialization (see below)
 int ini = getARGV("-i",0);
 
-real adapth = 0.01;
+// parameter for mesh adaptation
+real adapth = 0.04;
 
+// best known values (Antunes-Henrot, Antunes-Bogosel)
 real[int] best = [0,37.987,0,65.28,79.70,88.54,109.44,120.58,137.38,143.15];
 
+// size of the problem
 int NN = vect.n;
+// step for the uniform discretization
 real h = 2*pi/NN;
 
+// uniform discretization
 real[int] thetas = 0:h:(2*pi-h/2);
 
+// Initializations
 for(int i=0;i<NN;i++){
   if(ini==0){
    vect[i] = 1+0.1*cos(2*thetas[i]);  // init for 2, 4
@@ -56,9 +81,14 @@ for(int i=0;i<NN;i++){
   }	
 }
 
+// the index of the eigenvalue
 int eigCount = getARGV("-k",1);
 int eString = eigCount-1;
+
+
 real pm = 1;
+
+// Choice of finite element spaces
 macro Pk P2//
 macro Pk0 P2//
 macro Pkn P2//
@@ -66,6 +96,7 @@ macro Pkn P2//
 real w = 2;
 verbosity = 0;
 
+// function producing a random vector
 func real[int] rand(int h){
   randinit(randint32() );
   real[int] vec(h);
@@ -75,41 +106,20 @@ func real[int] rand(int h){
   return vec;
 }
 
-func real[int] symm(real[int] &vec){
-	real[int] res(vec.n);
-	res[0] = vec[0];
-	for(int i=1;i<vec.n;i++){
-		real mm = 0.5*(vec[i]+vec[vec.n-i]);
-		res[i] = mm;
-		res[vec.n-i] = mm;
-	}
-	return res;
-}
-
-for(int i=0;i<6;i++){
-   real[int] vect00 = rand(vect.n); 
-}
-
-
-//vect = vect+0.001*symm(rand(vect.n));
-
-
-
-
-int fin = 0;
-
 
 // Number of constraints: 
 // Convexity: nb of points
-// CW       : nb of points/2
+
 int Nconstr = vect.n;
 
+// Constraint matrix
+// clb <= A*x+bvec <= cub  
 real[int,int] A(Nconstr,vect.n);
 A = 0;  // initialization is important...
 
 real fact = 2*cos(h);
 
-//real h = 2*pi/vect.n;
+
 for(int i=0;i<vect.n;i++){
   A(i,i) = -fact;
   if(i+1<vect.n){A(i,i+1) = 1;}
@@ -118,6 +128,7 @@ for(int i=0;i<vect.n;i++){
 A(0,vect.n-1) = 1;
 A(vect.n-1,0) = 1;
 
+// Matrix for evaluating the diameter
 real[int,int] Adiam(vect.n/2,vect.n);
 for(int i=0;i<vect.n/2;i++){
   Adiam(i,i) = 1;
@@ -140,12 +151,15 @@ macro grad(u) [dx(u),dy(u)] // EOM
 real[int,int] A0(vect.n,vect.n);
 matrix B0;
 
+
 real den1 = 2*sin(h);
 real den2 = (2-2*cos(h));
 
+// Computation of the objective function and
+// its gradient
 
 func real[int] f(real[int] &vect){
-  //cout << vect<< endl;
+
   real[int] tempvect = vect;
   real[int] ctr   = Adiam*vect;
   real diam = ctr.max;
@@ -154,10 +168,8 @@ func real[int] f(real[int] &vect){
   real[int] vmin  = [vect(NN-1),vect(0:NN-2)];
   real[int] deriv = (vplus-vmin);
   deriv = 1/den1*deriv;
-  //real[int] deriv2 = (vplus+vmin);
-  //deriv2 = deriv2-2*vect;
-  //deriv2 = 1/den2*deriv2;
-  //real[int] crad = deriv+deriv2;
+  
+  // Construct discrete polygon
   real[int] X(NN),Y(NN);
     for(int j=0;j<NN;j++){
        X[j] = cos(thetas(j))*vect(j)-sin(thetas(j))*deriv(j);
@@ -175,29 +187,25 @@ func real[int] f(real[int] &vect){
   mesh Th;
   try{
      Th = buildmesh(G(NG),fixedborder=1);
-  //Th = adaptmesh(Th,0.02*diam,IsMetric=1,nbvx=50000,keepbackvertices=0,iso=0);
-//Th = adaptmesh(Th,0.02*diam,IsMetric=1,nbvx=50000,keepbackvertices=0,iso=1);
      Th = adaptmesh(Th,hmax=adapth*diam,nbvx=50000,iso=1);
-    Th = adaptmesh(Th,hmax=adapth*diam,nbvx=50000,iso=1);
-//Th = adaptmesh(Th,hmax=adapth*diam,nbvx=50000,keepbackvertices=0,iso=1);
-//Th = adaptmesh(Th,hmax=0.01*2,nbvx=50000,keepbackvertices=0,iso=1);
-//Th = adaptmesh(Th,0.01*diam,IsMetric=1,nbvx=50000,keepbackvertices=0,iso=1);
-//Th = adaptmesh(Th,0.005*diam,IsMetric=1,nbvx=50000,keepbackvertices=0,iso=1);
+     Th = adaptmesh(Th,hmax=adapth*diam,nbvx=50000,iso=1);
   }
   catch(...){
+    // If mesh generation fails, give a large value
+    // and a random gradient
   	real[int] gradt = vect;
   	gradt = rand(vect.n);
   	real val = 1e16;
   	real[int] result = [val,gradt];
   	return result;
   }
+  // Show current mesh
   plot(Th);
   fespace Vh(Th,Pk);
   fespace Vh0(Th,Pk0);
   Vh u,v,p;
-  //Vh xx = x;
-  //plot(xx,fill=1,value=1);
   
+  // Compute Dirichlet-Laplace eigenvalues
   varf aa(u,v) = int2d(Th)(dx(u)*dx(v)+dy(u)*dy(v))
                 +on(0,u=0);
   varf bb(u,v) = int2d(Th)(u*v);
@@ -210,18 +218,18 @@ func real[int] f(real[int] &vect){
   matrix B = bb(Vh,Vh);
   int numEigs = EigenValue(A,B,sigma=0,sym=true,value=ev,vector=eV);
   
-  
+  // Sort the eigenvalues
   int[int] ii(0:ev.n-1);
   sort(ev,ii);
 
-  // Parametric deriv = 2*Pi/N*ShDeriv*(p+p'') !!!!! 
+  // Store the desired eigenfunction and eigenvalue
   real eig = ev[eigCount-1];
-  
   u[] = eV[ii(eigCount-1)][];
   
+  // Plot if you want
+  // plot(u,fill=1,wait=1);
   
-  
-  //plot(u,fill=1,wait=1);
+  // Shape derivatives
   Vh0 ShDerivE = -(dx(u)^2+dy(u)^2);
   Vh0 ShDerivA = 1;
   
@@ -238,39 +246,48 @@ func real[int] f(real[int] &vect){
   Nx = Nx/Norm;
   Ny = Ny/Norm;
 
-  //Vh0 ShDeriv = Th.area*ShDerivE+val*ShDerivA; 
+
   
   Vh0 ShDeriv;
   real val; 
+  
+  // Choose the objective function
+  // Product (scale invariant) or sum
+  // both giving equivalent optimal shapes
+  // up to homotheties
+  
   if(variant==1){
   	 ShDeriv = Th.area*ShDerivE+eig*ShDerivA; 
-  
-  
-  //val= Th.area*val;
-   	val = eig*Th.area;
-
+   	 val = eig*Th.area;
   }
   else{  
-    ShDeriv = ShDerivE+ShDerivA; 
-  
-  
-  //val= Th.area*val;
-   	val = eig+Th.area;
+     ShDeriv = ShDerivE+ShDerivA; 
+   	 val = eig+Th.area;
   }
 
+  // Evaluate the gradient with respect to the 
+  // parameters
+  
   real[int] SDeval(NN);
   Vh[int] Chi(NN);
   for(int i=0;i<NN;i++){
+     // Create hat function on the boundary
      Chi[i] = h-(acos(Nx*cos(thetas[i])+Ny*sin(thetas[i])));
      Chi[i] = 1/h*Chi[i]*(Chi[i]>=0);
-     //plot(Chi,fill=1,wait=1);
+     // Compute the sensibility for variable of index i
      SDeval[i] = int1d(Th,0)(ShDeriv*Chi[i]);
   }
   
   real[int] gradt = SDeval;
   real[int] result = [val,gradt];
  
+  // change the sign for maximization problems
+  
   result = pm*result;
+  
+  // Store the minimal value found in the optimization 
+  // algorithm
+  
   cout << "Act min val: " << minval << " AH = " << best[eigCount-1] << " Current= " << eig*Th.area << endl;
    if(eig*Th.area<minval){
       minval = eig*Th.area;
@@ -299,7 +316,8 @@ f(vect);
 
 
 
-
+// Create functions for IPOPT
+// Objective function
 func real J(real[int] &X){
    cout << "Eval J"<< endl;
    real[int] result = f(X);
@@ -308,6 +326,7 @@ func real J(real[int] &X){
    return result(0);
 }
 
+// Gradient
 func real[int] gradJ(real[int] &X){
    cout << "Eval gradJ"<< endl;
    {
@@ -332,36 +351,24 @@ func real[int] gradJ(real[int] &X){
    }
 }
 
-matrix hessianLBuffer; //Just to keep it in mind
-
-func matrix hessianL (real[int] &X, real sigma, real[int] &lambda){
-    matrix Hess = B0;
-    cout << Hess << endl;
-    return Hess;
-}
-
+// Vectors for lower and upper bounds
+// for variables and constraints
 real[int] clb = bvec;
 clb = 0;
-
-
-
-
 real[int] lb = vect;
-lb = 0;
 real[int] ub = vect;
 lb = 0.1;
 ub = 2;
 
-//IPOPT(J,gradJ,[B,bvec],vect,clb=clb,cub=cub,lb=lb,linesearch=0,maxiter=1000);
 IPOPT(J,gradJ,[B,bvec],vect,clb=clb,lb=lb,linesearch=0,maxiter=1000);
-//IPOPT(J,gradJ,[B,bvec],vect,clb=clb,cub=cub,lb=lb,linesearch=1,maxiter=1000);
 
-
-//cout << vect << endl;
-
+// Evaluate the objective function at the end
+// of the optimization process
 real[int] rrr = f(vect);
 cout << rrr(0) << endl;
 
+// Save the last vector (possibly not the best one
+// since linesearch=0)
 {
     ofstream f("EigConvex_ShDerivMod"+(eigCount)+".data");
     f.precision(16);
@@ -373,6 +380,7 @@ cout << rrr(0) << endl;
 string ss = minval;
 cout << ss << endl;
 
+// Copy the optimization history to a file
 system("cp ipopt.out ipopt"+eigCount+".out");
 
 
