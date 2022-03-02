@@ -37,7 +37,7 @@ int variant=2;
 int ini = getARGV("-i",0);
 
 // parameter for mesh adaptation
-real adapth = 0.04;
+real adapth = 0.01;
 
 // best known values (Antunes-Henrot, Antunes-Bogosel)
 real[int] best = [0,37.987,0,65.28,79.70,88.54,109.44,120.58,137.38,143.15];
